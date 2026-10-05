@@ -41,6 +41,17 @@ masaüstünde önizle; ardından kaydet, uygula, içe ya da dışa aktar.
 omarchy plugin add https://github.com/ofa14-prog/omarchy-theme-studio.git --enable
 ```
 
+## Kaldırma
+
+```bash
+omarchy plugin remove io.github.ofa14-prog.theme-studio
+```
+
+Menü girişi ya da kısayol eklediysen o satırları da sil. Oluşturduğun temalar
+`~/.config/omarchy/themes/` içinde kalır; istersen `omarchy theme remove <ad>`
+ile ya da klasörlerini silerek kaldırabilirsin. Theme Studio sistemde başka
+hiçbir şeyi değiştirmez.
+
 ## Açmak
 
 ```bash

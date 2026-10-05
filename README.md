@@ -54,6 +54,17 @@ omarchy-shell shell rescanPlugins
 omarchy plugin enable io.github.ofa14-prog.theme-studio
 ```
 
+## Uninstall
+
+```bash
+omarchy plugin remove io.github.ofa14-prog.theme-studio
+```
+
+If you added the menu entry or key binding below, delete those lines too.
+Themes you created stay in `~/.config/omarchy/themes/`; remove them with
+`omarchy theme remove <name>` or by deleting their folders. Theme Studio
+changes nothing else on your system.
+
 ## Open it
 
 ```bash
