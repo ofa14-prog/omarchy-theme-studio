@@ -1,0 +1,28 @@
+name: test
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python: ["3.9", "3.11", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Manifest is valid JSON
+        run: python -c "import json; m = json.load(open('manifest.json')); assert m['schemaVersion'] == 1 and m['entryPoints']['overlay']"
+      - name: Helper tests
+        run: python -m unittest discover -s tests -v
+      - name: Palette and i18n tests
+        run: node tests/palette.test.mjs
+      - name: Every UI string has a Turkish translation
+        run: python tests/check_i18n.py

@@ -1,0 +1,931 @@
+#!/usr/bin/env python3
+"""Theme Studio helper: every file and process operation the QML overlay needs.
+
+Each command prints exactly one JSON object on stdout: {"ok": true, ...} or
+{"ok": false, "error": "..."}. The overlay never touches the filesystem itself.
+
+  doctor                    which optional/required tools are available
+  list                      themes (user + built-in) with mini palettes
+  load <name>               full palette, wallpapers, icon theme of one theme
+  preview <json>            render shell.toml for a palette and push it live
+  revert                    push the active theme's palette back to the shell
+  save <json>               write ~/.config/omarchy/themes/<name>/
+  apply <name>              omarchy-theme-set <name>
+  export <name> [dir]       pack the theme as <dir>/omarchy-<name>-theme.tar.gz
+  import <src> [--trust] [--name N]
+                            archive, folder, colors.toml, alacritty.toml or git URL
+  delete <name>             remove a user theme
+  ls <dir> [images|themes]  directory listing for the in-app file browser
+  image-palette <path>      dominant colours of an image (ImageMagick)
+  icons                     installed icon themes
+
+Only the Python standard library is used. Python 3.8+ is enough; tomllib
+(3.11+) and tarfile filters (3.12+) are used when present.
+"""
+
+import base64
+import json
+import os
+import re
+import shutil
+import stat
+import subprocess
+import sys
+import tarfile
+import tempfile
+import zipfile
+from pathlib import Path
+
+try:
+    import tomllib
+except ImportError:  # Python < 3.11
+    tomllib = None
+
+HOME = Path.home()
+
+
+def detect_omarchy_path():
+    env = os.environ.get("OMARCHY_PATH")
+    candidates = [Path(env)] if env else []
+    candidates += [Path("/usr/share/omarchy"), HOME / ".local/share/omarchy"]
+    for c in candidates:
+        if (c / "themes").is_dir():
+            return c
+    return candidates[0]
+
+
+OMARCHY_PATH = detect_omarchy_path()
+BUILTIN_THEMES = OMARCHY_PATH / "themes"
+TEMPLATES = OMARCHY_PATH / "default/themed"
+USER_THEMES = HOME / ".config/omarchy/themes"
+STATE_CANDIDATES = [HOME / ".local/state/omarchy/current", HOME / ".config/omarchy/current"]
+STATE = next((p for p in STATE_CANDIDATES if p.exists()), STATE_CANDIDATES[0])
+CURRENT_THEME = STATE / "theme"
+
+NAME_RE = re.compile(r"^[a-z0-9_][a-z0-9._+-]{0,63}$")
+HEX_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
+KEY_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
+# Values that end up inside generated Lua/CSS/TOML templates. Anything that
+# could close a string or start a new statement is refused.
+SAFE_VALUE_RE = re.compile(r"^[#A-Za-z0-9(),.%: _-]{0,200}$")
+BORDER_TOKEN_RE = re.compile(r"^(#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?|rgba?\([0-9a-fA-F]{6}([0-9a-fA-F]{2})?\)|-?\d{1,3}deg)$")
+IMAGE_EXT = {".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp"}
+ARCHIVE_SUFFIXES = (".tar.gz", ".tgz", ".tar.xz", ".txz", ".tar.bz2", ".tbz2", ".tar", ".zip")
+
+MAX_IMPORT_BYTES = 512 * 1024 * 1024
+MAX_IMPORT_FILES = 2000
+
+# Files a theme from a stranger may not ship, mirroring omarchy-theme-set:
+# Lua runs at login / editor start, terminal configs name the program to
+# launch, and vscode.json names an extension to install.
+DENIED_UNTRUSTED = {"alacritty.toml", "foot.ini", "ghostty.conf", "kitty.conf", "vscode.json"}
+
+# Copied when a new theme is derived from another one. Generated configs are
+# left out on purpose: a copied btop.theme would freeze the old colours.
+INHERITED_FILES = ("icons.theme", "neovim.lua", "vscode.json", "unlock.png")
+
+PALETTE_ORDER = [
+    ["mode"],
+    ["accent", "selection", "muted"],
+    ["background", "dark_background", "darker_background", "lighter_background"],
+    ["foreground", "dark_foreground", "light_foreground", "bright_foreground"],
+    ["red", "yellow", "orange", "green", "cyan", "blue", "magenta", "brown"],
+    ["bright_red", "bright_yellow", "bright_green", "bright_cyan", "bright_blue", "bright_magenta"],
+    ["hyprland_active_border", "hyprland_inactive_border"],
+]
+PALETTE_KEYS = [k for group in PALETTE_ORDER for k in group]
+BORDER_KEYS = ("hyprland_active_border", "hyprland_inactive_border")
+
+os.environ["PATH"] = f"{OMARCHY_PATH / 'bin'}:{os.environ.get('PATH', '')}"
+os.environ.setdefault("OMARCHY_PATH", str(OMARCHY_PATH))
+
+# ------------------------------------------------------------------ messages
+
+LANG_TR = (os.environ.get("THEME_STUDIO_LANG") or os.environ.get("LC_ALL")
+           or os.environ.get("LC_MESSAGES") or os.environ.get("LANG") or "").lower().startswith("tr")
+
+TR = {
+    "Invalid theme name: {0}": "Geçersiz tema adı: {0}",
+    "Theme not found: {0}": "Tema bulunamadı: {0}",
+    "Invalid data: {0}": "Geçersiz veri: {0}",
+    "Invalid colour for {0}: {1}": "{0} için geçersiz renk: {1}",
+    "Invalid border value for {0}": "{0} için geçersiz kenar değeri",
+    "The running shell refused the live preview: {0}": "Çalışan shell canlı önizlemeyi kabul etmedi: {0}",
+    "Required command not found: {0}. Is Omarchy up to date?": "Gerekli komut bulunamadı: {0}. Omarchy güncel mi?",
+    "omarchy-theme-set failed": "omarchy-theme-set başarısız oldu",
+    "Archive contains an unsafe path": "Arşiv güvenli olmayan bir yol içeriyor",
+    "Archive is too large": "Arşiv çok büyük",
+    "No source given": "Kaynak belirtilmedi",
+    "This git URL is not allowed": "Bu git adresine izin verilmiyor",
+    "git clone failed: {0}": "git clone başarısız: {0}",
+    "Not found: {0}": "Bulunamadı: {0}",
+    "Unsupported file. Use a .tar.gz, .zip, a folder, colors.toml or a git URL.":
+        "Desteklenmeyen dosya. .tar.gz, .zip, klasör, colors.toml ya da git adresi kullan.",
+    "No theme with colors.toml or alacritty.toml was found inside":
+        "İçinde colors.toml veya alacritty.toml olan bir tema bulunamadı",
+    "Could not extract a colour palette from the theme": "Temadan renk paleti çıkarılamadı",
+    "You can only delete your own themes": "Yalnızca kendi temalarını silebilirsin",
+    "The active theme cannot be deleted; apply another theme first":
+        "Aktif tema silinemez; önce başka bir tema uygula",
+    "Not a folder: {0}": "Klasör değil: {0}",
+    "Permission denied": "Erişim izni yok",
+    "Image not found": "Görsel bulunamadı",
+    "ImageMagick is not installed (magick)": "ImageMagick kurulu değil (magick)",
+    "Could not read colours from the image": "Görselden renk okunamadı",
+    "Unknown command": "Bilinmeyen komut",
+    "git is not installed": "git kurulu değil",
+}
+
+
+def msg(text, *args):
+    if LANG_TR and text in TR:
+        text = TR[text]
+    return text.format(*args)
+
+
+class Fail(Exception):
+    pass
+
+
+def out(data):
+    sys.stdout.write(json.dumps(data, ensure_ascii=False))
+    sys.stdout.flush()
+
+
+def need(cmd):
+    if not shutil.which(cmd):
+        raise Fail(msg("Required command not found: {0}. Is Omarchy up to date?", cmd))
+    return cmd
+
+
+def title_of(name):
+    return re.sub(r"(^|-)([a-z])", lambda m: m.group(1) + m.group(2).upper(), name).replace("-", " ")
+
+
+def slugify(text):
+    text = (text or "").strip().lower()
+    text = text.translate(str.maketrans("çğıöşüâîûäéèêáàñ", "cgiosuaiuaeeeaan"))
+    text = re.sub(r"<[^>]+>", "", text)
+    text = re.sub(r"[^a-z0-9._+-]+", "-", text).strip("-.")
+    return text[:64]
+
+
+def check_name(name):
+    if not name or not NAME_RE.match(name) or ".." in name:
+        raise Fail(msg("Invalid theme name: {0}", name))
+    return name
+
+
+def current_name():
+    for state in STATE_CANDIDATES:
+        try:
+            return (state / "theme.name").read_text().strip()
+        except OSError:
+            continue
+    return ""
+
+
+def parse_colors_text(text):
+    """colors.toml -> {key: str}. Falls back to a line parser for sloppy files."""
+    if tomllib:
+        try:
+            data = tomllib.loads(text)
+            return {k: str(v) for k, v in data.items() if isinstance(v, (str, int, float))}
+        except Exception:
+            pass
+    result = {}
+    for line in text.splitlines():
+        m = re.match(r"""^\s*([A-Za-z0-9_-]+)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^#\s]+))""", line)
+        if m:
+            result[m.group(1)] = next(g for g in m.groups()[1:] if g is not None)
+    return result
+
+
+def resolved_colors(path):
+    """Full resolved palette via omarchy-theme-color (handles legacy colorN keys)."""
+    if not shutil.which("omarchy-theme-color"):
+        return {}
+    try:
+        res = subprocess.run(["omarchy-theme-color", "--file", str(path), "--all"],
+                             capture_output=True, text=True, timeout=10)
+    except (OSError, subprocess.TimeoutExpired):
+        return {}
+    pairs = {}
+    for line in res.stdout.splitlines():
+        if "\t" in line:
+            k, v = line.split("\t", 1)
+            pairs[k] = v
+    return pairs
+
+
+def theme_dirs(name):
+    """Layers of a theme, lowest first: built-in, then the user's overlay."""
+    dirs = []
+    if (BUILTIN_THEMES / name).is_dir():
+        dirs.append(BUILTIN_THEMES / name)
+    if (USER_THEMES / name).is_dir():
+        dirs.append(USER_THEMES / name)
+    return dirs
+
+
+def from_git(path):
+    return path.is_dir() and not path.is_symlink() and (path / ".git").is_dir()
+
+
+def read_text(path, limit=1024 * 1024):
+    with open(path, "r", errors="replace") as f:
+        return f.read(limit)
+
+
+def colors_from_alacritty(alacritty_file):
+    if not shutil.which("omarchy-theme-colors-from-alacritty"):
+        return ""
+    with tempfile.TemporaryDirectory() as tmp:
+        shutil.copyfile(alacritty_file, Path(tmp) / "alacritty.toml")
+        try:
+            subprocess.run(["omarchy-theme-colors-from-alacritty", tmp], capture_output=True, timeout=20)
+        except (OSError, subprocess.TimeoutExpired):
+            return ""
+        produced = Path(tmp) / "colors.toml"
+        return read_text(produced) if produced.is_file() else ""
+
+
+def colors_text_of(name):
+    dirs = theme_dirs(name)
+    for d in reversed(dirs):
+        f = d / "colors.toml"
+        if f.is_file() and not f.is_symlink():
+            return read_text(f)
+    for d in reversed(dirs):
+        f = d / "alacritty.toml"
+        if f.is_file() and not f.is_symlink():
+            return colors_from_alacritty(f)
+    return ""
+
+
+def palette_of(name):
+    text = colors_text_of(name)
+    if not text:
+        return {}, {}
+    raw = parse_colors_text(text)
+    with tempfile.TemporaryDirectory() as tmp:
+        f = Path(tmp) / "colors.toml"
+        f.write_text(text)
+        resolved = resolved_colors(f)
+    colors = {}
+    for key in PALETTE_KEYS:
+        if key in raw:
+            colors[key] = raw[key]
+        elif key in resolved and key not in BORDER_KEYS:
+            colors[key] = resolved[key]
+    extras = {k: v for k, v in raw.items() if k not in PALETTE_KEYS}
+    return colors, extras
+
+
+def quick_palette(name):
+    """Cheap swatch strip for the library list (no subprocesses)."""
+    raw = {}
+    for d in reversed(theme_dirs(name)):
+        f = d / "colors.toml"
+        if f.is_file():
+            raw = parse_colors_text(read_text(f, 64 * 1024))
+            break
+    return {k: raw[k] for k in ("background", "foreground", "accent", "red", "green", "yellow", "blue", "magenta")
+            if k in raw and HEX_RE.match(str(raw[k]))}
+
+
+def wallpapers_of(name):
+    seen, result = set(), []
+    user_bg = HOME / ".config/omarchy/backgrounds" / name
+    for d in [USER_THEMES / name / "backgrounds", BUILTIN_THEMES / name / "backgrounds", user_bg]:
+        if not d.is_dir():
+            continue
+        for f in sorted(d.iterdir()):
+            if f.suffix.lower() in IMAGE_EXT and f.is_file() and f.name not in seen:
+                seen.add(f.name)
+                result.append(str(f))
+    return result
+
+
+def template_outputs():
+    return sorted(p.name[:-4] for p in TEMPLATES.glob("*.tpl")) if TEMPLATES.is_dir() else []
+
+
+# ---------------------------------------------------------------- validation
+
+def valid_border(value):
+    tokens = str(value).split()
+    return 0 < len(tokens) <= 8 and all(BORDER_TOKEN_RE.match(t) for t in tokens)
+
+
+def clean_palette(colors):
+    """Validate everything that will be written into colors.toml."""
+    if not isinstance(colors, dict):
+        raise Fail(msg("Invalid data: {0}", "colors"))
+    clean = {}
+    for k, v in colors.items():
+        if k not in PALETTE_KEYS or v is None or v == "":
+            continue
+        v = str(v).strip()
+        if k == "mode":
+            if v not in ("dark", "light"):
+                raise Fail(msg("Invalid colour for {0}: {1}", k, v))
+        elif k in BORDER_KEYS:
+            if not valid_border(v):
+                raise Fail(msg("Invalid border value for {0}", k))
+        elif not HEX_RE.match(v):
+            raise Fail(msg("Invalid colour for {0}: {1}", k, v))
+        clean[k] = v
+    return clean
+
+
+def clean_extras(extras):
+    """Unknown keys from imported themes are kept only if they are inert."""
+    if not isinstance(extras, dict):
+        return {}
+    return {k: str(v) for k, v in extras.items()
+            if KEY_RE.match(str(k)) and k not in PALETTE_KEYS and SAFE_VALUE_RE.match(str(v))}
+
+
+def toml_quote(value):
+    return '"' + str(value).replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n").replace("\r", "") + '"'
+
+
+def render_colors_toml(colors, extras):
+    lines = []
+    for group in PALETTE_ORDER:
+        block = [f"{k} = {toml_quote(colors[k])}" for k in group if str(colors.get(k, "")).strip()]
+        if block:
+            lines.extend(block)
+            lines.append("")
+    extra_block = [f"{k} = {toml_quote(v)}" for k, v in (extras or {}).items()]
+    if extra_block:
+        lines.append("# Preserved from the source theme")
+        lines.extend(extra_block)
+        lines.append("")
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def payload_from(arg):
+    try:
+        data = json.loads(Path(arg[1:]).read_text()) if arg.startswith("@") else json.loads(arg)
+    except (ValueError, OSError) as e:
+        raise Fail(msg("Invalid data: {0}", e))
+    if not isinstance(data, dict):
+        raise Fail(msg("Invalid data: {0}", type(data).__name__))
+    return data
+
+
+# ---------------------------------------------------------------- commands
+
+def cmd_doctor(_args):
+    tools = {
+        "omarchy-theme-set": True, "omarchy-theme-set-templates": True, "omarchy-shell": True,
+        "omarchy-theme-color": False, "omarchy-theme-colors-from-alacritty": False,
+        "magick": False, "git": False, "wl-copy": False, "xdg-open": False,
+    }
+    missing = [t for t, req in tools.items() if req and not shutil.which(t)]
+    optional = [t for t, req in tools.items() if not req and not shutil.which(t)]
+    return {"omarchyPath": str(OMARCHY_PATH), "builtinThemes": BUILTIN_THEMES.is_dir(),
+            "python": sys.version.split()[0], "missing": missing, "missingOptional": optional}
+
+
+def cmd_list(_args):
+    names = set()
+    for root in (BUILTIN_THEMES, USER_THEMES):
+        if root.is_dir():
+            names.update(p.name for p in root.iterdir()
+                         if p.is_dir() and not p.name.startswith(".") and NAME_RE.match(p.name))
+    current = current_name()
+    themes = []
+    for name in sorted(names):
+        preview = ""
+        for d in reversed(theme_dirs(name)):
+            if (d / "preview.png").is_file():
+                preview = str(d / "preview.png")
+                break
+        themes.append({
+            "name": name,
+            "title": title_of(name),
+            "user": (USER_THEMES / name).is_dir(),
+            "builtin": (BUILTIN_THEMES / name).is_dir(),
+            "git": from_git(USER_THEMES / name),
+            "current": name == current,
+            "preview": preview,
+            "swatches": quick_palette(name),
+        })
+    return {"themes": themes, "current": current}
+
+
+def cmd_load(args):
+    name = check_name(args[0] if args else "")
+    if not theme_dirs(name):
+        raise Fail(msg("Theme not found: {0}", name))
+    colors, extras = palette_of(name)
+    icons = ""
+    for d in reversed(theme_dirs(name)):
+        if (d / "icons.theme").is_file():
+            icons = read_text(d / "icons.theme", 256).strip()
+            break
+    user_dir = USER_THEMES / name
+    static = []
+    if user_dir.is_dir():
+        generated = set(template_outputs())
+        static = sorted(p.name for p in user_dir.iterdir() if p.name in generated)
+    return {
+        "name": name,
+        "title": title_of(name),
+        "user": user_dir.is_dir(),
+        "builtin": (BUILTIN_THEMES / name).is_dir(),
+        "git": from_git(user_dir),
+        "current": name == current_name(),
+        "colors": colors,
+        "extras": clean_extras(extras),
+        "icons": icons,
+        "wallpapers": wallpapers_of(name),
+        "staticFiles": static,
+    }
+
+
+def render_shell_toml(colors_text):
+    """Run Omarchy's own template engine in a throwaway HOME to get shell.toml."""
+    need("omarchy-theme-set-templates")
+    with tempfile.TemporaryDirectory() as tmp:
+        fake_home = Path(tmp)
+        nxt = fake_home / ".local/state/omarchy/current/next-theme"
+        nxt.mkdir(parents=True)
+        (nxt / "colors.toml").write_text(colors_text)
+        tpl_dir = fake_home / ".config/omarchy/themed"
+        tpl_dir.mkdir(parents=True)
+        user_tpl = HOME / ".config/omarchy/themed"
+        if user_tpl.is_dir():
+            for t in user_tpl.glob("shell*.tpl"):
+                shutil.copyfile(t, tpl_dir / t.name)
+        # Only shell.toml matters for the live preview; pre-creating the other
+        # outputs makes the generator skip them, which keeps this fast.
+        for out_name in template_outputs():
+            if out_name != "shell.toml":
+                (nxt / out_name).touch()
+        env = dict(os.environ, HOME=str(fake_home))
+        try:
+            subprocess.run(["omarchy-theme-set-templates"], env=env, capture_output=True, timeout=20)
+        except subprocess.TimeoutExpired:
+            return ""
+        shell = nxt / "shell.toml"
+        return read_text(shell) if shell.is_file() else ""
+
+
+def push_to_shell(colors_text, shell_text):
+    need("omarchy-shell")
+    b64 = lambda s: base64.b64encode(s.encode()).decode()
+    try:
+        res = subprocess.run(["omarchy-shell", "shell", "applyTheme", b64(colors_text), b64(shell_text)],
+                             capture_output=True, text=True, timeout=5)
+    except subprocess.TimeoutExpired:
+        raise Fail(msg("The running shell refused the live preview: {0}", "timeout"))
+    if res.returncode != 0:
+        raise Fail(msg("The running shell refused the live preview: {0}", (res.stderr or res.stdout).strip()))
+
+
+def cmd_preview(args):
+    payload = payload_from(args[0] if args else "{}")
+    text = render_colors_toml(clean_palette(payload.get("colors", {})), clean_extras(payload.get("extras", {})))
+    push_to_shell(text, render_shell_toml(text))
+    return {}
+
+
+def cmd_revert(_args):
+    colors = CURRENT_THEME / "colors.toml"
+    shell = CURRENT_THEME / "shell.toml"
+    push_to_shell(read_text(colors) if colors.is_file() else "",
+                  read_text(shell) if shell.is_file() else "")
+    return {}
+
+
+def unique_target(directory, filename):
+    target = directory / filename
+    stem, suffix, n = target.stem, target.suffix, 2
+    while target.exists():
+        target = directory / f"{stem}-{n}{suffix}"
+        n += 1
+    return target
+
+
+def preview_source(path):
+    """Only accept the screenshot the overlay itself wrote."""
+    if not path:
+        return None
+    p = Path(path)
+    allowed_dirs = {Path(os.environ.get("XDG_RUNTIME_DIR") or "/nonexistent"), HOME / ".cache/theme-studio"}
+    if p.name != "theme-studio-preview.png" or p.parent not in allowed_dirs:
+        return None
+    if not p.is_file() or p.is_symlink():
+        return None
+    return p
+
+
+def cmd_save(args):
+    payload = payload_from(args[0] if args else "{}")
+    name = check_name(slugify(payload.get("name", "")))
+    base = slugify(payload.get("base", "") or "")
+    colors = clean_palette(payload.get("colors", {}))
+    extras = clean_extras(payload.get("extras", {}))
+
+    dest = USER_THEMES / name
+    is_new = not dest.exists()
+    if dest.is_symlink():
+        dest = dest.resolve()
+    dest.mkdir(parents=True, exist_ok=True)
+
+    if is_new and base and base != name and NAME_RE.match(base):
+        for layer in theme_dirs(base):
+            trusted = not from_git(layer)
+            for fname in INHERITED_FILES:
+                src = layer / fname
+                if not src.is_file() or src.is_symlink():
+                    continue
+                if not trusted and (fname.endswith(".lua") or fname in DENIED_UNTRUSTED):
+                    continue
+                shutil.copyfile(src, dest / fname)
+
+    (dest / "colors.toml").write_text(render_colors_toml(colors, extras))
+
+    icons = str(payload.get("icons", "") or "").strip()
+    if icons and re.match(r"^[A-Za-z0-9._+-]{1,64}$", icons):
+        (dest / "icons.theme").write_text(icons + "\n")
+
+    if isinstance(payload.get("wallpapers"), list):
+        bg_dir = dest / "backgrounds"
+        bg_dir.mkdir(exist_ok=True)
+        builtin_bg = (BUILTIN_THEMES / name / "backgrounds").resolve()
+        keep = set()
+        for item in payload["wallpapers"]:
+            src = Path(str(item)).expanduser()
+            if not src.is_file() or src.suffix.lower() not in IMAGE_EXT:
+                continue
+            src_res = src.resolve()
+            if src_res.parent == bg_dir.resolve():
+                keep.add(src_res.name)
+                continue
+            if src_res.parent == builtin_bg:
+                # Same-named built-in theme: omarchy-theme-set merges these anyway.
+                continue
+            existing = bg_dir / src.name
+            if existing.is_file() and existing.stat().st_size == src_res.stat().st_size:
+                keep.add(existing.name)
+                continue
+            target = unique_target(bg_dir, src.name)
+            shutil.copyfile(src_res, target)
+            keep.add(target.name)
+        for f in bg_dir.iterdir():
+            if (f.is_file() or f.is_symlink()) and f.name not in keep:
+                f.unlink()
+        if not any(bg_dir.iterdir()):
+            bg_dir.rmdir()
+
+    preview = preview_source(payload.get("previewImage"))
+    if preview:
+        shutil.copyfile(preview, dest / "preview.png")
+
+    return {"name": name, "path": str(dest), "created": is_new}
+
+
+def cmd_apply(args):
+    name = check_name(args[0] if args else "")
+    need("omarchy-theme-set")
+    try:
+        res = subprocess.run(["omarchy-theme-set", name], capture_output=True, text=True, timeout=180)
+    except subprocess.TimeoutExpired:
+        raise Fail(msg("omarchy-theme-set failed") + " (timeout)")
+    if res.returncode != 0:
+        raise Fail((res.stdout + res.stderr).strip() or msg("omarchy-theme-set failed"))
+    return {"name": name, "log": (res.stderr or "").strip()[:500]}
+
+
+def walk_files(root):
+    """Yield (path, relative) for regular files under root, never following symlinks."""
+    for dirpath, dirnames, filenames in os.walk(root, followlinks=False):
+        dirnames[:] = [d for d in dirnames if d != ".git" and not os.path.islink(os.path.join(dirpath, d))]
+        for fn in filenames:
+            p = Path(dirpath) / fn
+            if p.is_symlink() or not p.is_file():
+                continue
+            yield p, p.relative_to(root)
+
+
+def merged_copy(name, dest):
+    """Copy a theme's layers (built-in, then user overlay) into dest without .git or symlinks."""
+    dest.mkdir(parents=True)
+    for layer in theme_dirs(name):
+        for src, rel in walk_files(layer):
+            target = dest / rel
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(src, target)
+
+
+def cmd_export(args):
+    name = check_name(args[0] if args else "")
+    if not theme_dirs(name):
+        raise Fail(msg("Theme not found: {0}", name))
+    target_dir = Path(args[1]).expanduser() if len(args) > 1 and args[1] else None
+    if not target_dir:
+        xdg = os.environ.get("XDG_DOWNLOAD_DIR")
+        target_dir = Path(xdg) if xdg and Path(xdg).is_dir() else (
+            HOME / "Downloads" if (HOME / "Downloads").is_dir() else HOME)
+    target_dir.mkdir(parents=True, exist_ok=True)
+    archive = unique_target(target_dir, f"omarchy-{name}-theme.tar.gz")
+    with tempfile.TemporaryDirectory() as tmp:
+        staged = Path(tmp) / name
+        merged_copy(name, staged)
+        if not (staged / "colors.toml").is_file():
+            text = colors_text_of(name)
+            if text:
+                (staged / "colors.toml").write_text(text)
+        with tarfile.open(archive, "w:gz") as tar:
+            tar.add(staged, arcname=name)
+    return {"path": str(archive)}
+
+
+def safe_extract(archive, dest):
+    dest_root = dest.resolve()
+
+    def inside(member_name):
+        target = (dest_root / member_name).resolve()
+        return target == dest_root or str(target).startswith(str(dest_root) + os.sep)
+
+    if archive.name.lower().endswith(".zip"):
+        with zipfile.ZipFile(archive) as z:
+            infos = z.infolist()
+            if len(infos) > MAX_IMPORT_FILES or sum(i.file_size for i in infos) > MAX_IMPORT_BYTES:
+                raise Fail(msg("Archive is too large"))
+            for info in infos:
+                if not inside(info.filename):
+                    raise Fail(msg("Archive contains an unsafe path"))
+                # Symlinks in zips are stored as regular files with mode bits; skip them.
+                if stat.S_ISLNK(info.external_attr >> 16):
+                    continue
+                z.extract(info, dest)
+        return
+
+    with tarfile.open(archive) as tar:
+        members = tar.getmembers()
+        if len(members) > MAX_IMPORT_FILES or sum(m.size for m in members) > MAX_IMPORT_BYTES:
+            raise Fail(msg("Archive is too large"))
+        safe = []
+        for m in members:
+            if not inside(m.name):
+                raise Fail(msg("Archive contains an unsafe path"))
+            if m.isfile() or m.isdir():
+                safe.append(m)
+        if hasattr(tarfile, "data_filter"):
+            tar.extractall(dest, members=safe, filter="data")
+        else:  # Python < 3.12: members are already restricted to files/dirs inside dest
+            for m in safe:
+                m.mode = (m.mode | 0o600) & 0o755
+            tar.extractall(dest, members=safe)
+
+
+def find_theme_root(root, depth=4):
+    queue = [(root, 0)]
+    while queue:
+        d, level = queue.pop(0)
+        if (d / "colors.toml").is_file() or (d / "alacritty.toml").is_file():
+            return d
+        if level < depth:
+            queue.extend((c, level + 1) for c in sorted(d.iterdir())
+                         if c.is_dir() and not c.is_symlink() and c.name != ".git")
+    return None
+
+
+def is_url(src):
+    return bool(re.match(r"^(https://|ssh://|git@)", src))
+
+
+def url_allowed(src):
+    if src.startswith("-") or any(c.isspace() for c in src):
+        return False
+    if shutil.which("omarchy-git-url-check"):
+        return subprocess.run(["omarchy-git-url-check", src], capture_output=True).returncode == 0
+    return bool(re.match(r"^(https://[A-Za-z0-9.-]+/|ssh://git@[A-Za-z0-9.-]+/|git@[A-Za-z0-9.-]+:)[A-Za-z0-9._/~-]+$", src))
+
+
+def cmd_import(args):
+    if not args:
+        raise Fail(msg("No source given"))
+    src, trust, forced_name = args[0].strip(), False, ""
+    rest = args[1:]
+    while rest:
+        flag = rest.pop(0)
+        if flag == "--trust":
+            trust = True
+        elif flag == "--name" and rest:
+            forced_name = rest.pop(0)
+
+    with tempfile.TemporaryDirectory() as tmp:
+        work = Path(tmp)
+        if is_url(src):
+            if not shutil.which("git"):
+                raise Fail(msg("git is not installed"))
+            if not url_allowed(src):
+                raise Fail(msg("This git URL is not allowed"))
+            env = dict(os.environ, GIT_TERMINAL_PROMPT="0", GIT_ASKPASS="true")
+            try:
+                res = subprocess.run(["git", "-c", "protocol.allow=never", "-c", "protocol.https.allow=always",
+                                      "-c", "protocol.ssh.allow=always", "-c", "core.symlinks=false",
+                                      "clone", "--depth", "1", "--no-recurse-submodules", "--", src,
+                                      str(work / "repo")],
+                                     capture_output=True, text=True, timeout=180, env=env)
+            except subprocess.TimeoutExpired:
+                raise Fail(msg("git clone failed: {0}", "timeout"))
+            if res.returncode != 0:
+                raise Fail(msg("git clone failed: {0}", res.stderr.strip()[-300:]))
+            guess = re.sub(r"\.git$", "", src.rstrip("/").split("/")[-1].split(":")[-1])
+            search = work / "repo"
+        else:
+            path = Path(src).expanduser()
+            if not path.exists():
+                raise Fail(msg("Not found: {0}", path))
+            lower = path.name.lower()
+            if path.is_dir():
+                search = path
+                guess = path.name
+            elif lower.endswith(ARCHIVE_SUFFIXES):
+                search = work / "x"
+                search.mkdir()
+                safe_extract(path, search)
+                guess = re.sub(r"(\.tar)?\.(gz|tgz|xz|txz|bz2|tbz2|zip|tar)$", "", path.name)
+                entries = list(search.iterdir())
+                if len(entries) == 1 and entries[0].is_dir():
+                    guess = entries[0].name
+            elif lower.endswith(".toml"):
+                search = work / "single"
+                search.mkdir()
+                text = read_text(path)
+                kind = "alacritty.toml" if "[colors" in text else "colors.toml"
+                (search / kind).write_text(text)
+                guess = path.parent.name if path.name in ("colors.toml", "alacritty.toml") else path.stem
+            else:
+                raise Fail(msg("Unsupported file. Use a .tar.gz, .zip, a folder, colors.toml or a git URL."))
+
+        root = find_theme_root(search)
+        if not root:
+            raise Fail(msg("No theme with colors.toml or alacritty.toml was found inside"))
+        if root != search:
+            guess = root.name
+
+        name = slugify(forced_name or re.sub(r"^omarchy-|-theme$", "", slugify(guess))) or "imported"
+        check_name(name)
+        dest = USER_THEMES / name
+        n = 2
+        while dest.exists() or dest.is_symlink():
+            dest = USER_THEMES / f"{name}-{n}"
+            n += 1
+
+        skipped = []
+        count, total = 0, 0
+        dest.mkdir(parents=True)
+        try:
+            for f, rel in walk_files(root):
+                count += 1
+                total += f.stat().st_size
+                if count > MAX_IMPORT_FILES or total > MAX_IMPORT_BYTES:
+                    raise Fail(msg("Archive is too large"))
+                top = rel.parts[0]
+                if not trust and len(rel.parts) == 1 and (top.endswith(".lua") or top in DENIED_UNTRUSTED):
+                    skipped.append(top)
+                    continue
+                (dest / rel).parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(f, dest / rel)
+
+            if not (dest / "colors.toml").is_file() and (root / "alacritty.toml").is_file():
+                text = colors_from_alacritty(root / "alacritty.toml")
+                if text:
+                    (dest / "colors.toml").write_text(text)
+            if not (dest / "colors.toml").is_file():
+                raise Fail(msg("Could not extract a colour palette from the theme"))
+        except BaseException:
+            shutil.rmtree(dest, ignore_errors=True)
+            raise
+
+    return {"name": dest.name, "skipped": skipped}
+
+
+def cmd_delete(args):
+    name = check_name(args[0] if args else "")
+    target = USER_THEMES / name
+    if not target.exists() and not target.is_symlink():
+        raise Fail(msg("You can only delete your own themes"))
+    if name == current_name():
+        raise Fail(msg("The active theme cannot be deleted; apply another theme first"))
+    if target.is_symlink():
+        target.unlink()
+    else:
+        shutil.rmtree(target)
+    return {"name": name, "builtinRemains": (BUILTIN_THEMES / name).is_dir()}
+
+
+def cmd_ls(args):
+    path = Path(args[0] if args and args[0] else str(HOME)).expanduser().resolve()
+    mode = args[1] if len(args) > 1 else ""
+    if path.is_file():
+        path = path.parent
+    if not path.is_dir():
+        raise Fail(msg("Not a folder: {0}", path))
+    entries = []
+    try:
+        children = sorted(path.iterdir(), key=lambda p: (not p.is_dir(), p.name.lower()))
+    except PermissionError:
+        raise Fail(msg("Permission denied"))
+    for p in children:
+        if p.name.startswith("."):
+            continue
+        try:
+            is_dir = p.is_dir()
+        except OSError:
+            continue
+        lower = p.name.lower()
+        if not is_dir:
+            if mode == "images" and p.suffix.lower() not in IMAGE_EXT:
+                continue
+            if mode == "themes" and not (lower.endswith(ARCHIVE_SUFFIXES) or lower.endswith(".toml")):
+                continue
+        entries.append({"name": p.name, "path": str(p), "dir": is_dir,
+                        "image": p.suffix.lower() in IMAGE_EXT})
+    return {"path": str(path), "parent": str(path.parent), "entries": entries[:800]}
+
+
+def cmd_image_palette(args):
+    path = Path(args[0] if args else "").expanduser()
+    ext = path.suffix.lower()
+    if not path.is_file() or ext not in IMAGE_EXT:
+        raise Fail(msg("Image not found"))
+    tool = shutil.which("magick") or shutil.which("convert")
+    if not tool:
+        raise Fail(msg("ImageMagick is not installed (magick)"))
+    # Force the decoder from the extension so a renamed SVG/MVG/etc. is never interpreted.
+    coder = {".jpg": "jpeg", ".jpeg": "jpeg"}.get(ext, ext[1:])
+    try:
+        res = subprocess.run([tool, f"{coder}:{path}[0]", "-resize", "160x160", "-colors", "16",
+                              "-format", "%c", "histogram:info:-"],
+                             capture_output=True, text=True, timeout=30)
+    except subprocess.TimeoutExpired:
+        raise Fail(msg("Could not read colours from the image"))
+    colors = []
+    for line in res.stdout.splitlines():
+        m = re.search(r"^\s*(\d+):.*?(#[0-9A-Fa-f]{6})", line)
+        if m:
+            colors.append({"count": int(m.group(1)), "hex": m.group(2).lower()})
+    if not colors:
+        raise Fail(msg("Could not read colours from the image"))
+    colors.sort(key=lambda c: -c["count"])
+    return {"colors": colors}
+
+
+def cmd_icons(_args):
+    names = set()
+    data_dirs = (os.environ.get("XDG_DATA_DIRS") or "/usr/local/share:/usr/share").split(":")
+    roots = [Path(d) / "icons" for d in data_dirs if d] + [HOME / ".local/share/icons", HOME / ".icons"]
+    for root in roots:
+        if root.is_dir():
+            for d in root.iterdir():
+                if (d / "index.theme").is_file() and not (d / "cursors").is_dir() \
+                        and not d.name.lower().startswith(("default", "hicolor", "locolor")):
+                    names.add(d.name)
+    return {"icons": sorted(names)}
+
+
+COMMANDS = {
+    "doctor": cmd_doctor,
+    "list": cmd_list,
+    "load": cmd_load,
+    "preview": cmd_preview,
+    "revert": cmd_revert,
+    "save": cmd_save,
+    "apply": cmd_apply,
+    "export": cmd_export,
+    "import": cmd_import,
+    "delete": cmd_delete,
+    "ls": cmd_ls,
+    "image-palette": cmd_image_palette,
+    "icons": cmd_icons,
+}
+
+
+def main(argv):
+    if not argv or argv[0] not in COMMANDS:
+        out({"ok": False, "error": msg("Unknown command") + ": " + ", ".join(COMMANDS)})
+        return 2
+    try:
+        result = COMMANDS[argv[0]](argv[1:])
+        result["ok"] = True
+        out(result)
+        return 0
+    except Fail as e:
+        out({"ok": False, "error": str(e)})
+    except Exception as e:  # keep the overlay informed instead of failing silently
+        out({"ok": False, "error": f"{type(e).__name__}: {e}"})
+    return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))
