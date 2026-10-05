@@ -45,15 +45,6 @@ your real desktop, then save, apply, import or export it.
 omarchy plugin add https://github.com/ofa14-prog/omarchy-theme-studio.git --enable
 ```
 
-Or by hand:
-
-```bash
-git clone https://github.com/ofa14-prog/omarchy-theme-studio.git \
-  ~/.config/omarchy/plugins/io.github.ofa14-prog.theme-studio
-omarchy-shell shell rescanPlugins
-omarchy plugin enable io.github.ofa14-prog.theme-studio
-```
-
 ## Uninstall
 
 ```bash
