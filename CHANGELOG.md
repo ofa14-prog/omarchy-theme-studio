@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.0.1
+
+- Security: every QML `Text` now renders as plain text (only the canvas uses
+  escaped StyledText), so names, file names or error messages from imported
+  themes can no longer trigger HTML image loads.
+- Security: `icons.theme` is validated when loading and importing; an invalid
+  value is skipped instead of being shown.
+- CI checks that every `Text` sets a safe `textFormat`.
+
 ## 1.0.0
 
 First public release.

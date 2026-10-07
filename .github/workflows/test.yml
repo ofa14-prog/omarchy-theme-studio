@@ -24,5 +24,7 @@ jobs:
         run: python -m unittest discover -s tests -v
       - name: Palette and i18n tests
         run: node tests/palette.test.mjs
+      - name: Every QML Text sets a safe textFormat
+        run: python tests/check_qml.py
       - name: Every UI string has a Turkish translation
         run: python tests/check_i18n.py

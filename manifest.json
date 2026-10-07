@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "io.github.ofa14-prog.theme-studio",
   "name": "Theme Studio",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "author": "Ömer Faruk Altıntaş",
   "license": "MIT",
   "description": "Design Omarchy themes on a live desktop canvas: edit every colour, generate palettes, pick wallpapers, preview live, then save, apply, import or export.",

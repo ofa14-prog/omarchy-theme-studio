@@ -67,6 +67,7 @@ HEX_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
 KEY_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 # Values that end up inside generated Lua/CSS/TOML templates. Anything that
 # could close a string or start a new statement is refused.
+ICON_THEME_RE = re.compile(r"^[A-Za-z0-9._+-]{1,64}$")
 SAFE_VALUE_RE = re.compile(r"^[#A-Za-z0-9(),.%: _-]{0,200}$")
 BORDER_TOKEN_RE = re.compile(r"^(#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?|rgba?\([0-9a-fA-F]{6}([0-9a-fA-F]{2})?\)|-?\d{1,3}deg)$")
 IMAGE_EXT = {".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp"}
@@ -427,6 +428,10 @@ def cmd_load(args):
         if (d / "icons.theme").is_file():
             icons = read_text(d / "icons.theme", 256).strip()
             break
+    # icons.theme may come from an untrusted import; only a plain icon theme
+    # name is ever handed to the UI.
+    if not ICON_THEME_RE.match(icons):
+        icons = ""
     user_dir = USER_THEMES / name
     static = []
     if user_dir.is_dir():
@@ -551,7 +556,7 @@ def cmd_save(args):
     (dest / "colors.toml").write_text(render_colors_toml(colors, extras))
 
     icons = str(payload.get("icons", "") or "").strip()
-    if icons and re.match(r"^[A-Za-z0-9._+-]{1,64}$", icons):
+    if icons and ICON_THEME_RE.match(icons):
         (dest / "icons.theme").write_text(icons + "\n")
 
     if isinstance(payload.get("wallpapers"), list):
@@ -792,6 +797,10 @@ def cmd_import(args):
                     raise Fail(msg("Archive is too large"))
                 top = rel.parts[0]
                 if not trust and len(rel.parts) == 1 and (top.endswith(".lua") or top in DENIED_UNTRUSTED):
+                    skipped.append(top)
+                    continue
+                if top == "icons.theme" and len(rel.parts) == 1 \
+                        and not ICON_THEME_RE.match(read_text(f, 256).strip()):
                     skipped.append(top)
                     continue
                 (dest / rel).parent.mkdir(parents=True, exist_ok=True)

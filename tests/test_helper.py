@@ -134,6 +134,20 @@ class HelperTest(unittest.TestCase):
         self.assertTrue(r["ok"], r)
         self.assertEqual(r["name"], "sunset")
 
+    def test_untrusted_icons_theme_never_reaches_the_ui(self):
+        evil = '<img src="https://attacker.example/beacon.png">'
+        src = Path(self.tmp.name) / "evil-theme"
+        src.mkdir()
+        (src / "colors.toml").write_text(CATPPUCCIN)
+        (src / "icons.theme").write_text(evil)
+        r = self.run_helper("import", str(src))
+        self.assertTrue(r["ok"], r)
+        self.assertIn("icons.theme", r["skipped"])
+        self.assertFalse((self.user_themes / r["name"] / "icons.theme").exists())
+        # Even if such a file is placed by hand, load() refuses to return it.
+        (self.user_themes / r["name"] / "icons.theme").write_text(evil)
+        self.assertEqual(self.run_helper("load", r["name"])["icons"], "")
+
     def test_delete_rules(self):
         self.assertFalse(self.run_helper("delete", "catppuccin")["ok"])  # built-in only
         (self.user_themes / "mine").mkdir()

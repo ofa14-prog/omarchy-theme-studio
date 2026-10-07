@@ -714,6 +714,7 @@ Item {
           spacing: Style.space(14)
 
           Text {
+            textFormat: Text.PlainText
             text: "󰏘"
             color: root.accent
             font.family: Style.font.family
@@ -723,8 +724,8 @@ Item {
           Column {
             visible: !root.compact
             anchors.verticalCenter: parent.verticalCenter
-            Text { text: "Theme Studio"; color: root.fg; font.family: Style.font.family; font.pixelSize: Style.font.heading; font.bold: true }
-            Text { text: root.tr("Omarchy theme designer"); color: Color.muted; font.family: Style.font.family; font.pixelSize: Style.font.caption }
+            Text { textFormat: Text.PlainText; text: "Theme Studio"; color: root.fg; font.family: Style.font.family; font.pixelSize: Style.font.heading; font.bold: true }
+            Text { textFormat: Text.PlainText; text: root.tr("Omarchy theme designer"); color: Color.muted; font.family: Style.font.family; font.pixelSize: Style.font.caption }
           }
 
           Rectangle { visible: !root.compact; width: 1; height: header.height * 0.55; color: root.alpha(root.fg, 0.15); anchors.verticalCenter: parent.verticalCenter }
@@ -756,6 +757,7 @@ Item {
                 Keys.onEscapePressed: function(e) { keys.forceActiveFocus(); e.accepted = true }
               }
               Text {
+                textFormat: Text.PlainText
                 anchors.right: parent.right; anchors.rightMargin: 10
                 anchors.verticalCenter: parent.verticalCenter
                 text: root.dirty ? "●" : "󰄬"
@@ -765,6 +767,7 @@ Item {
               }
             }
             Text {
+              textFormat: Text.PlainText
               text: root.saveTargetInfo
               color: root.saveTargetInfo.charAt(0) === "⚠" ? "#e5a50a" : Color.muted
               font.family: Style.font.family
@@ -780,6 +783,7 @@ Item {
           spacing: Style.space(8)
 
           Text {
+            textFormat: Text.PlainText
             visible: root.busy !== ""
             text: "󰔟 " + root.busy
             color: root.accent
@@ -820,8 +824,8 @@ Item {
 
           Row {
             spacing: 8
-            Text { text: root.tr("Themes"); color: root.fg; font.family: Style.font.family; font.pixelSize: Style.font.subtitle; font.bold: true }
-            Text { text: String(root.themes.length); color: Color.muted; font.family: Style.font.family; font.pixelSize: Style.font.subtitle }
+            Text { textFormat: Text.PlainText; text: root.tr("Themes"); color: root.fg; font.family: Style.font.family; font.pixelSize: Style.font.subtitle; font.bold: true }
+            Text { textFormat: Text.PlainText; text: String(root.themes.length); color: Color.muted; font.family: Style.font.family; font.pixelSize: Style.font.subtitle }
           }
 
           Rectangle {
@@ -832,6 +836,7 @@ Item {
             border.width: 1
             border.color: searchInput.activeFocus ? root.accent : root.alpha(root.fg, 0.12)
             Text {
+              textFormat: Text.PlainText
               x: 10; anchors.verticalCenter: parent.verticalCenter
               text: root.tr("  Search…")
               visible: searchInput.text === ""
@@ -892,6 +897,7 @@ Item {
                 spacing: 6
                 width: parent.width
                 Text {
+                  textFormat: Text.PlainText
                   text: modelData.title
                   color: root.fg
                   font.family: Style.font.family
@@ -901,6 +907,7 @@ Item {
                   width: Math.min(implicitWidth, parent.width - 90)
                 }
                 Text {
+                  textFormat: Text.PlainText
                   visible: modelData.current
                   text: root.tr("● active")
                   color: root.accent
@@ -909,6 +916,7 @@ Item {
                   anchors.verticalCenter: parent.verticalCenter
                 }
                 Text {
+                  textFormat: Text.PlainText
                   text: modelData.user ? (modelData.builtin ? root.tr("modified") : (modelData.git ? "git" : "senin")) : ""
                   color: Color.muted
                   font.family: Style.font.family
@@ -998,9 +1006,9 @@ Item {
                 anchors.verticalCenter: parent.verticalCenter
                 width: parent.width - Style.space(64)
                 spacing: 2
-                Text { text: root.keyInfo(root.selectedKey).label; color: root.fg; font.family: Style.font.family; font.pixelSize: Style.font.subtitle; font.bold: true; elide: Text.ElideRight; width: parent.width }
-                Text { text: root.keyInfo(root.selectedKey).code; color: root.accent; font.family: Style.font.family; font.pixelSize: Style.font.caption }
-                Text { text: root.keyInfo(root.selectedKey).hint; color: Color.muted; font.family: Style.font.family; font.pixelSize: Style.font.caption; elide: Text.ElideRight; width: parent.width }
+                Text { textFormat: Text.PlainText; text: root.keyInfo(root.selectedKey).label; color: root.fg; font.family: Style.font.family; font.pixelSize: Style.font.subtitle; font.bold: true; elide: Text.ElideRight; width: parent.width }
+                Text { textFormat: Text.PlainText; text: root.keyInfo(root.selectedKey).code; color: root.accent; font.family: Style.font.family; font.pixelSize: Style.font.caption }
+                Text { textFormat: Text.PlainText; text: root.keyInfo(root.selectedKey).hint; color: Color.muted; font.family: Style.font.family; font.pixelSize: Style.font.caption; elide: Text.ElideRight; width: parent.width }
               }
             }
 
@@ -1081,6 +1089,7 @@ Item {
                     MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: root.selectKey(modelData) }
                   }
                   Text {
+                    textFormat: Text.PlainText
                     text: modelData === "border:inactive:0" ? "pasif" : (modelData === "border:active:1" ? "aktif 2" : "aktif")
                     color: Color.muted; font.family: Style.font.family; font.pixelSize: Style.font.caption
                   }
@@ -1113,6 +1122,7 @@ Item {
                 sourceSize.width: 640
               }
               Text {
+                textFormat: Text.PlainText
                 anchors.centerIn: parent
                 visible: !root.currentWallpaper
                 text: root.tr("No wallpaper")
@@ -1151,6 +1161,7 @@ Item {
                 radius: 6
                 color: root.alpha(root.fg, 0.06)
                 Text {
+                  textFormat: Text.PlainText
                   anchors.centerIn: parent
                   text: root.icons || root.tr("(default)")
                   color: root.fg; font.family: Style.font.family; font.pixelSize: Style.font.body
@@ -1162,6 +1173,7 @@ Item {
             // ---------------- notes
             SectionTitle { text: root.tr("File") }
             Text {
+              textFormat: Text.PlainText
               width: parent.width
               wrapMode: Text.WordWrap
               visible: root.source.staticFiles && root.source.staticFiles.length > 0
@@ -1169,6 +1181,7 @@ Item {
               color: "#e5a50a"; font.family: Style.font.family; font.pixelSize: Style.font.caption
             }
             Text {
+              textFormat: Text.PlainText
               width: parent.width
               wrapMode: Text.WordWrap
               visible: !!root.source.git
@@ -1249,6 +1262,7 @@ Item {
             radius: height / 2
             color: root.alpha(Color.background, 0.85)
             Text {
+              textFormat: Text.PlainText
               id: hintText
               anchors.centerIn: parent
               text: root.hoverKey ? root.tr("Click → %1  (%2)", root.keyInfo(root.hoverKey).label, root.keyInfo(root.hoverKey).code) : root.tr("Click an element to pick its colour")
@@ -1279,7 +1293,7 @@ Item {
                   Column {
                     width: palCol.width
                     spacing: Style.space(8)
-                    Text { text: modelData.label; color: root.fg; font.family: Style.font.family; font.pixelSize: Style.font.subtitle; font.bold: true }
+                    Text { textFormat: Text.PlainText; text: modelData.label; color: root.fg; font.family: Style.font.family; font.pixelSize: Style.font.subtitle; font.bold: true }
                     Flow {
                       width: parent.width
                       spacing: Style.space(10)
@@ -1293,8 +1307,8 @@ Item {
                           border.color: root.selectedKey === modelData.key ? root.fg : root.alpha(root.fg, 0.15)
                           Column {
                             anchors.left: parent.left; anchors.bottom: parent.bottom; anchors.margins: 10
-                            Text { text: modelData.label; color: P.readableOn(root.keyColor(modelData.key)); font.family: Style.font.family; font.pixelSize: Style.font.body; font.bold: true }
-                            Text { text: root.keyColor(modelData.key) + "  " + modelData.key; color: P.readableOn(root.keyColor(modelData.key)); opacity: 0.75; font.family: Style.font.family; font.pixelSize: Style.font.caption }
+                            Text { textFormat: Text.PlainText; text: modelData.label; color: P.readableOn(root.keyColor(modelData.key)); font.family: Style.font.family; font.pixelSize: Style.font.body; font.bold: true }
+                            Text { textFormat: Text.PlainText; text: root.keyColor(modelData.key) + "  " + modelData.key; color: P.readableOn(root.keyColor(modelData.key)); opacity: 0.75; font.family: Style.font.family; font.pixelSize: Style.font.caption }
                           }
                           MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: root.selectKey(modelData.key) }
                         }
@@ -1320,6 +1334,7 @@ Item {
               model: root.contrastPairs
               boundsBehavior: Flickable.StopAtBounds
               header: Text {
+                textFormat: Text.PlainText
                 text: root.tr("WCAG contrast ratios · at least 4.5 for text, 3 for large text/icons")
                 color: Color.muted; font.family: Style.font.family; font.pixelSize: Style.font.caption
                 bottomPadding: Style.space(10)
@@ -1341,6 +1356,7 @@ Item {
                     width: Style.space(170); height: crow.height - 12; radius: 4
                     color: root.keyColor(modelData[1])
                     Text {
+                      textFormat: Text.PlainText
                       anchors.centerIn: parent
                       text: root.tr("Aa Sample text")
                       color: root.keyColor(modelData[0])
@@ -1351,10 +1367,11 @@ Item {
                   Column {
                     anchors.verticalCenter: parent.verticalCenter
                     width: Math.max(Style.space(140), crow.width - Style.space(170 + 70 + 84 + 110) - Style.space(14) * 4)
-                    Text { text: modelData[2]; color: root.fg; font.family: Style.font.family; font.pixelSize: Style.font.body }
-                    Text { text: modelData[0] + " / " + modelData[1]; color: Color.muted; font.family: Style.font.family; font.pixelSize: Style.font.caption }
+                    Text { textFormat: Text.PlainText; text: modelData[2]; color: root.fg; font.family: Style.font.family; font.pixelSize: Style.font.body }
+                    Text { textFormat: Text.PlainText; text: modelData[0] + " / " + modelData[1]; color: Color.muted; font.family: Style.font.family; font.pixelSize: Style.font.caption }
                   }
                   Text {
+                    textFormat: Text.PlainText
                     anchors.verticalCenter: parent.verticalCenter
                     width: Style.space(70)
                     text: crow.ratio.toFixed(2)
@@ -1364,7 +1381,7 @@ Item {
                     anchors.verticalCenter: parent.verticalCenter
                     width: Style.space(84); height: Math.round(Style.font.body * 1.8); radius: height / 2
                     color: crow.ratio >= crow.target ? Qt.rgba(0.3, 0.75, 0.4, 0.25) : Qt.rgba(0.9, 0.3, 0.3, 0.25)
-                    Text { anchors.centerIn: parent; text: crow.grade; color: root.fg; font.family: Style.font.family; font.pixelSize: Style.font.caption; font.bold: true }
+                    Text { textFormat: Text.PlainText; anchors.centerIn: parent; text: crow.grade; color: root.fg; font.family: Style.font.family; font.pixelSize: Style.font.caption; font.bold: true }
                   }
                   Btn {
                     anchors.verticalCenter: parent.verticalCenter
@@ -1432,6 +1449,7 @@ Item {
           anchors.centerIn: parent
           spacing: Style.space(12)
           Text {
+            textFormat: Text.PlainText
             text: (root.toastKind === "error" ? "󰅚  " : (root.toastKind === "ok" ? "󰄬  " : "󰋽  ")) + root.toastText
             color: root.fg
             font.family: Style.font.family
@@ -1476,6 +1494,7 @@ Item {
             width: parent.width - Style.space(40)
             spacing: Style.space(18)
             Text {
+              textFormat: Text.PlainText
               width: parent.width
               text: root.confirmText
               wrapMode: Text.WordWrap
@@ -1509,8 +1528,9 @@ Item {
             anchors.centerIn: parent
             width: parent.width - Style.space(44)
             spacing: Style.space(14)
-            Text { text: root.tr("󰋺  Import theme"); color: root.fg; font.family: Style.font.family; font.pixelSize: Style.font.heading; font.bold: true }
+            Text { textFormat: Text.PlainText; text: root.tr("󰋺  Import theme"); color: root.fg; font.family: Style.font.family; font.pixelSize: Style.font.heading; font.bold: true }
             Text {
+              textFormat: Text.PlainText
               width: parent.width
               wrapMode: Text.WordWrap
               text: root.tr("Supported: .tar.gz / .zip archive, theme folder, colors.toml, alacritty.toml or a git URL (https://github.com/…/omarchy-x-theme). The theme is copied into ~/.config/omarchy/themes and opened in the editor.")
@@ -1527,6 +1547,7 @@ Item {
                 border.width: 1
                 border.color: importInput.activeFocus ? root.accent : root.alpha(root.fg, 0.15)
                 Text {
+                  textFormat: Text.PlainText
                   x: 10; anchors.verticalCenter: parent.verticalCenter
                   visible: importInput.text === ""
                   text: root.tr("~/Downloads/my-theme.tar.gz or a git URL")
@@ -1555,10 +1576,11 @@ Item {
                 color: root.importTrust ? root.accent : "transparent"
                 border.width: 1
                 border.color: root.importTrust ? root.accent : root.alpha(root.fg, 0.4)
-                Text { anchors.centerIn: parent; visible: root.importTrust; text: "󰄬"; color: Color.background; font.family: Style.font.family; font.pixelSize: Style.font.caption }
+                Text { textFormat: Text.PlainText; anchors.centerIn: parent; visible: root.importTrust; text: "󰄬"; color: Color.background; font.family: Style.font.family; font.pixelSize: Style.font.caption }
                 MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: root.importTrust = !root.importTrust }
               }
               Text {
+                textFormat: Text.PlainText
                 anchors.verticalCenter: parent.verticalCenter
                 width: importCol.width - Style.space(30)
                 wrapMode: Text.WordWrap

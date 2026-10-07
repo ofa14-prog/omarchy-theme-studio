@@ -14,6 +14,7 @@ Item {
     color: Qt.rgba(Color.foreground.r, Color.foreground.g, Color.foreground.b, 0.1)
   }
   Text {
+    textFormat: Text.PlainText
     id: label
     anchors.bottom: parent.bottom
     text: section.text.toUpperCase()

@@ -65,12 +65,13 @@ Item {
       anchors.leftMargin: 14
       anchors.verticalCenter: parent.verticalCenter
       spacing: 14
-      Text { text: "󰣇"; color: canvas.c("foreground"); font.family: canvas.mono; font.pixelSize: 16 }
+      Text { textFormat: Text.PlainText; text: "󰣇"; color: canvas.c("foreground"); font.family: canvas.mono; font.pixelSize: 16 }
       Repeater {
         model: 5
         Item {
           width: 14; height: 20
           Text {
+            textFormat: Text.PlainText
             anchors.centerIn: parent
             text: String(index + 1)
             color: index === 1 ? canvas.c("accent") : canvas.c("foreground")
@@ -86,6 +87,7 @@ Item {
       anchors.centerIn: parent
       width: clock.implicitWidth; height: clock.implicitHeight
       Text {
+        textFormat: Text.PlainText
         id: clock
         text: canvas.tr("Monday 14:32")
         color: canvas.c("foreground")
@@ -100,12 +102,12 @@ Item {
       spacing: 14
       Item {
         width: rec.implicitWidth; height: rec.implicitHeight
-        Text { id: rec; text: "󰑋"; color: canvas.c("red"); font.family: canvas.mono; font.pixelSize: 14 }
+        Text { textFormat: Text.PlainText; id: rec; text: "󰑋"; color: canvas.c("red"); font.family: canvas.mono; font.pixelSize: 14 }
         Hot { key: "red"; studio: canvas.studio }
       }
       Repeater {
         model: ["󰂯", "󰤨", "󰕾", "󰁹", "󰐥"]
-        Text { text: modelData; color: canvas.c("foreground"); font.family: canvas.mono; font.pixelSize: 14 }
+        Text { textFormat: Text.PlainText; text: modelData; color: canvas.c("foreground"); font.family: canvas.mono; font.pixelSize: 14 }
       }
     }
   }
@@ -193,9 +195,9 @@ Item {
           Row {
             x: 12; anchors.verticalCenter: parent.verticalCenter
             spacing: 12
-            Text { text: modelData[0]; color: index === 1 ? canvas.c("accent") : canvas.c("foreground"); font.family: canvas.mono; font.pixelSize: 16; width: 22 }
-            Text { text: modelData[1]; color: index === 1 ? canvas.c("accent") : canvas.c("foreground"); font.family: canvas.mono; font.pixelSize: 14; font.bold: index === 1 }
-            Text { text: modelData[2]; color: canvas.c("dark_foreground"); font.family: canvas.mono; font.pixelSize: 12; anchors.verticalCenter: parent.verticalCenter }
+            Text { textFormat: Text.PlainText; text: modelData[0]; color: index === 1 ? canvas.c("accent") : canvas.c("foreground"); font.family: canvas.mono; font.pixelSize: 16; width: 22 }
+            Text { textFormat: Text.PlainText; text: modelData[1]; color: index === 1 ? canvas.c("accent") : canvas.c("foreground"); font.family: canvas.mono; font.pixelSize: 14; font.bold: index === 1 }
+            Text { textFormat: Text.PlainText; text: modelData[2]; color: canvas.c("dark_foreground"); font.family: canvas.mono; font.pixelSize: 12; anchors.verticalCenter: parent.verticalCenter }
           }
         }
       }
@@ -220,12 +222,12 @@ Item {
           width: 150; height: parent.height
           color: canvas.c("background")
           Rectangle { width: parent.width; height: 2; color: canvas.c("accent") }
-          Text { anchors.centerIn: parent; text: "  theme.js"; color: canvas.c("foreground"); font.family: canvas.mono; font.pixelSize: 13 }
+          Text { textFormat: Text.PlainText; anchors.centerIn: parent; text: "  theme.js"; color: canvas.c("foreground"); font.family: canvas.mono; font.pixelSize: 13 }
         }
         Rectangle {
           width: 150; height: parent.height
           color: "transparent"
-          Text { anchors.centerIn: parent; text: "  colors.toml"; color: canvas.c("dark_foreground"); font.family: canvas.mono; font.pixelSize: 13 }
+          Text { textFormat: Text.PlainText; anchors.centerIn: parent; text: "  colors.toml"; color: canvas.c("dark_foreground"); font.family: canvas.mono; font.pixelSize: 13 }
           Hot { key: "dark_foreground"; studio: canvas.studio; outset: -2 }
         }
       }
@@ -276,6 +278,7 @@ Item {
         Row {
           height: 22
           Text {
+            textFormat: Text.PlainText
             width: 44; height: 22
             horizontalAlignment: Text.AlignRight
             rightPadding: 8
@@ -305,7 +308,7 @@ Item {
       Rectangle {
         width: 82; height: parent.height
         color: canvas.c("accent")
-        Text { anchors.centerIn: parent; text: "NORMAL"; color: canvas.c("background"); font.family: canvas.mono; font.pixelSize: 12; font.bold: true }
+        Text { textFormat: Text.PlainText; anchors.centerIn: parent; text: "NORMAL"; color: canvas.c("background"); font.family: canvas.mono; font.pixelSize: 12; font.bold: true }
         Hot { key: "accent"; studio: canvas.studio; outset: -1 }
       }
       Text {
@@ -315,6 +318,7 @@ Item {
         font.family: canvas.mono; font.pixelSize: 12
       }
       Text {
+        textFormat: Text.PlainText
         anchors.right: parent.right; anchors.rightMargin: 12; anchors.verticalCenter: parent.verticalCenter
         text: "utf-8   5:12   42%"
         color: canvas.c("light_foreground")
@@ -365,14 +369,14 @@ Item {
       Rectangle {
         width: 40; height: 40; radius: 20
         color: canvas.c("accent")
-        Text { anchors.centerIn: parent; text: "󰏘"; color: canvas.c("background"); font.family: canvas.mono; font.pixelSize: 20 }
+        Text { textFormat: Text.PlainText; anchors.centerIn: parent; text: "󰏘"; color: canvas.c("background"); font.family: canvas.mono; font.pixelSize: 20 }
         Hot { key: "accent"; studio: canvas.studio }
       }
       Column {
         anchors.verticalCenter: parent.verticalCenter
         spacing: 4
-        Text { text: "Theme Studio"; color: canvas.c("bright_foreground"); font.family: canvas.mono; font.pixelSize: 14; font.bold: true }
-        Text { text: canvas.tr("Theme saved and applied"); color: canvas.c("light_foreground"); font.family: canvas.mono; font.pixelSize: 12 }
+        Text { textFormat: Text.PlainText; text: "Theme Studio"; color: canvas.c("bright_foreground"); font.family: canvas.mono; font.pixelSize: 14; font.bold: true }
+        Text { textFormat: Text.PlainText; text: canvas.tr("Theme saved and applied"); color: canvas.c("light_foreground"); font.family: canvas.mono; font.pixelSize: 12 }
       }
     }
   }

@@ -37,6 +37,7 @@ Rectangle {
     anchors.centerIn: parent
     spacing: btn.icon && btn.text ? Math.round(btn.fontSize * 0.5) : 0
     Text {
+      textFormat: Text.PlainText
       visible: btn.icon !== ""
       text: btn.icon
       color: btn.kind === "primary" ? Color.background : (btn.active ? btn.accent : btn.fg)
@@ -45,6 +46,7 @@ Rectangle {
       anchors.verticalCenter: parent.verticalCenter
     }
     Text {
+      textFormat: Text.PlainText
       visible: btn.text !== ""
       text: btn.text
       color: btn.kind === "primary" ? Color.background : btn.fg
@@ -75,6 +77,7 @@ Rectangle {
     anchors.topMargin: 4
     anchors.horizontalCenter: parent.horizontalCenter
     Text {
+      textFormat: Text.PlainText
       id: tipText
       anchors.centerIn: parent
       text: btn.tip

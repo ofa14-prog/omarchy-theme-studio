@@ -51,6 +51,7 @@ Rectangle {
       width: parent.width
       spacing: Style.space(8)
       Text {
+        textFormat: Text.PlainText
         text: browser.title
         color: browser.fg
         font.family: Style.font.family
@@ -90,6 +91,7 @@ Rectangle {
     }
 
     Text {
+      textFormat: Text.PlainText
       visible: browser.error !== ""
       text: browser.error
       color: "#e06c75"
@@ -120,12 +122,14 @@ Rectangle {
             x: 10
             spacing: 10
             Text {
+              textFormat: Text.PlainText
               text: modelData.dir ? "󰉋" : (modelData.image ? "󰋩" : "󰈔")
               color: modelData.dir ? Color.accent : browser.fg
               font.family: Style.font.family
               font.pixelSize: Style.font.body
             }
             Text {
+              textFormat: Text.PlainText
               text: modelData.name
               color: browser.fg
               font.family: Style.font.family
@@ -141,6 +145,7 @@ Rectangle {
           }
         }
         Text {
+          textFormat: Text.PlainText
           anchors.centerIn: parent
           visible: browser.entries.length === 0 && browser.error === ""
           text: browser.tr("No matching files in this folder")
